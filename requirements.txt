@@ -1,0 +1,23 @@
+# Core
+python-dotenv>=1.0.1
+pydantic-settings>=2.0.0
+numpy>=1.26.4
+sounddevice>=0.4.6
+soundfile>=0.12.1
+aiohttp>=3.9.0
+indic-transliteration>=2.3.0
+
+# STT
+faster-whisper==1.1.0
+
+# LLM
+google-genai==2.8.0
+llama-cpp-python>=0.3.0
+
+# TTS
+kokoro>=0.9.0
+sarvamai>=1.0.0
+
+# VAD
+torch>=2.1.0
+torchaudio>=2.1.0

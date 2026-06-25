@@ -1,0 +1,45 @@
+# ── Python ──
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ── Virtual environments ──
+.build/
+.build2/
+.build2r/
+.venv/
+venv/
+env/
+
+# ── Secrets ──
+.env
+
+# ── Models (large GGUF files) ──
+models/
+
+# ── Audio artifacts ──
+*.wav
+*.mp3
+outputs/
+test_recordings/
+
+# ── IDE / Editor ──
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS files ──
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# ── Misc ──
+*.log
+.agents/
