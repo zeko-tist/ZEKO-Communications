@@ -5,7 +5,7 @@ if (Test-Path ".build2r\Scripts\activate.ps1") {
     Write-Host "Warning: Virtual environment not found." -ForegroundColor Yellow
 }
 
-# Force Python to use UTF-8 natively (avoids β encoding crash)
+# Force Python to use UTF-8 natively
 $env:PYTHONUTF8 = "1"
 
 # Run the engine

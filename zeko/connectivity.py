@@ -26,7 +26,7 @@ class ConnectivityChecker:
 
     async def is_online(self) -> bool:
         """Return True if the internet is reachable. Result is cached for TTL seconds."""
-        now = time.time()
+        now = time.monotonic()
         if now - self._last_check < self.ttl_seconds:
             return self._cached_status
 

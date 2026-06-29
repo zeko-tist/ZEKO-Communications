@@ -10,8 +10,6 @@ responds in English and uses Kokoro for speech synthesis.
 from __future__ import annotations
 
 import asyncio
-import os
-import sys
 
 import numpy as np
 
@@ -42,21 +40,6 @@ class KokoroTTS(BaseTTS):
     def _load_pipeline(self):
         if self._pipeline is not None:
             return self._pipeline
-
-        # Windows fix: espeakng-loader hardcodes the GitHub Actions build path
-        # instead of looking at the local install. Fix by pointing ESPEAK_DATA_PATH
-        # to the actual package location.
-        if sys.platform == "win32":
-            try:
-                import espeakng_loader
-                from pathlib import Path
-
-                espeak_data = Path(espeakng_loader.__file__).parent / "espeak-ng-data"
-                if espeak_data.exists():
-                    os.environ["ESPEAK_DATA_PATH"] = str(espeak_data.parent)
-                    os.environ["OUPUT_DIR"] = str(espeak_data)  # Famous espeak-ng typo
-            except ImportError:
-                pass
 
         try:
             from kokoro import KPipeline

@@ -1,1 +1,1 @@
-"""ZEKO VRS Engine — Phase I Beta (Revised)."""
+"""ZEKO VRE Build Beta."""

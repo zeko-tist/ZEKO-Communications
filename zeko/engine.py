@@ -1,4 +1,4 @@
-"""ZEKO VRS Engine — top-level engine that wires all modules together.
+"""ZEKO VRE Build Beta — top-level engine that wires all modules together.
 
 Initializes all modules from config, manages the main async run loop,
 and handles clean shutdown on KeyboardInterrupt.
@@ -45,7 +45,7 @@ class VoiceResponseEngine:
         cfg = self.config
 
         print("\n" + "=" * 60)
-        print("  ZEKO VRS Engine — Phase I Beta (Revised)")
+        print("  ZEKO VRE Build Beta")
         print("  Initializing components...")
         print("=" * 60)
 

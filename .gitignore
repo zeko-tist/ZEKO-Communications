@@ -21,6 +21,7 @@ env/
 
 # ── Models (large GGUF files) ──
 models/
+models/.cache/
 
 # ── Audio artifacts ──
 *.wav

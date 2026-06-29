@@ -1,4 +1,4 @@
-# ZEKO VRS Engine — Phase I Beta (Revised)
+# ZEKO VRE Build Beta
 
 A real-time voice response engine for the ZEKO humanoid robot, built for a college campus environment. Speaks and understands **Malayalam** (and English) with sub-10s end-to-end latency.
 

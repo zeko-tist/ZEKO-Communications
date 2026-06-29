@@ -1,6 +1,6 @@
 """Async streaming pipeline orchestrator.
 
-The heart of the beta engine — replaces alpha's sequential
+The heart of the ZEKO VRE engine — replaces alpha's sequential
 listen → think → speak with an async pipeline that overlaps
 LLM generation and TTS synthesis via asyncio.Queue + asyncio.gather.
 

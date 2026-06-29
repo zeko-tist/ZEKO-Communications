@@ -1,4 +1,4 @@
-"""ZEKO VRS Engine — Phase I Beta (Revised) entry point."""
+"""ZEKO VRE Build Beta — entry point."""
 
 # ── espeakng-loader Windows fix ──────────────────────────────────────────────
 # The espeakng-loader Windows wheel hardcodes the GitHub Actions build path
