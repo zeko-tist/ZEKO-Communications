@@ -1,10 +1,12 @@
-"""Offline LLM using Gemma 3 4B via llama-cpp-python.
+"""Offline LLM using Gemma 3 1B via llama-cpp-python (CPU-only).
 
-Fallback brain for offline operation. Runs the quantized Gemma 3 4B
-model (Q4_K_M GGUF) on the RTX 3060 (~2.5 GB VRAM).
+Designed for Raspberry Pi 5 (ARM64, no GPU, 8 GB RAM):
+    - Model: Gemma 3 1B Q4_K_M GGUF (~0.6 GB RAM).
+    - n_gpu_layers=0: all layers run on CPU.
+    - Responds in English (matching KokoroTTS offline capability).
 
-VRAM management: Only loaded when offline mode is triggered.
-WhisperSTT.unload() must be called first to free VRAM.
+Download: https://huggingface.co/bartowski/google_gemma-3-1b-it-GGUF
+Place at: models/gemma-3-1b-it-Q4_K_M.gguf
 """
 
 from __future__ import annotations
@@ -24,9 +26,9 @@ class LocalLLM(BaseLLM):
 
     def __init__(
         self,
-        model_path: str,
-        n_gpu_layers: int = -1,
-        n_ctx: int = 2048,
+        model_path: str = "models/gemma-3-1b-it-Q4_K_M.gguf",
+        n_gpu_layers: int = 0,     # No GPU on RPi5
+        n_ctx: int = 1024,         # Reduced to conserve RAM
     ) -> None:
         self.model_path = model_path
         self.n_gpu_layers = n_gpu_layers
@@ -52,7 +54,7 @@ class LocalLLM(BaseLLM):
         except ImportError:
             raise RuntimeError(
                 "llama-cpp-python not installed. Run:\n"
-                '  CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python'
+                "  pip install llama-cpp-python"
             )
         if not Path(self.model_path).exists():
             raise FileNotFoundError(
@@ -129,15 +131,8 @@ class LocalLLM(BaseLLM):
         return Path(self.model_path).exists()
 
     def unload(self) -> None:
-        """Release model from GPU memory."""
+        """Release model from memory."""
         if self._model is not None:
             del self._model
             self._model = None
-            try:
-                import torch
-
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            except ImportError:
-                pass
-            print("🗑️  Local LLM unloaded from GPU.")
+            print("🗑️  Local LLM unloaded.")

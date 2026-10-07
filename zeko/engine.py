@@ -1,7 +1,9 @@
-"""ZEKO VRE Build Beta — top-level engine that wires all modules together.
+"""ZEKO VRE — top-level engine that wires all modules together.
 
-Initializes all modules from config, manages the main async run loop,
-and handles clean shutdown on KeyboardInterrupt.
+Hardware target: Raspberry Pi 5 (Linux, ARM64, 8 GB RAM, no GPU).
+Runtime mode:    English-only UPR. Sarvam TTS is frozen.
+                 GeminiTTS is the online primary TTS.
+                 KokoroTTS is the offline TTS.
 """
 
 from __future__ import annotations
@@ -13,22 +15,23 @@ from .stt.whisper_stt import WhisperSTT
 from .stt.gemini_stt import GeminiSTT
 from .llm.gemini_llm import GeminiLLM
 from .llm.local_llm import LocalLLM
-from .tts.sarvam_tts import SarvamTTS
 from .tts.gemini_tts import GeminiTTS
 from .tts.kokoro_tts import KokoroTTS
 from .pipeline import Pipeline
+
+# FROZEN: SarvamTTS import is preserved but not instantiated when english_only=True.
+# from .tts.sarvam_tts import SarvamTTS
 
 
 class VoiceResponseEngine:
     """Top-level engine that initializes all modules and runs the main loop.
 
-    Wires together:
-    - VAD (silero-vad) for speech detection
-    - STT (Whisper offline / Gemini online) for transcription
-    - LLM (Gemini online / Gemma offline) for response generation
-    - TTS (Sarvam primary → Gemini fallback → Kokoro last-resort) for speech synthesis
-    - Pipeline for async streaming orchestration
-    - Connectivity checker for online/offline routing
+    English-only mode wiring:
+    - VAD  : Silero VAD (CPU, 16 kHz)
+    - STT  : GeminiSTT (online) / WhisperSTT tiny.en (offline, CPU int8)
+    - LLM  : GeminiLLM streaming (online) / Gemma 3 1B GGUF (offline, CPU)
+    - TTS  : GeminiTTS (online primary) → KokoroTTS (offline / last-resort)
+    - FROZEN: SarvamTTS (Malayalam-native) is not started; no Sarvam API key needed.
     """
 
     def __init__(self, config: Config) -> None:
@@ -45,9 +48,14 @@ class VoiceResponseEngine:
         cfg = self.config
 
         print("\n" + "=" * 60)
-        print("  ZEKO VRE Build Beta")
+        print("  ZEKO VRE — English-Only Mode")
+        print("  Hardware: Raspberry Pi 5  |  No GPU")
         print("  Initializing components...")
         print("=" * 60)
+
+        if cfg.english_only:
+            print("🔒 English-only UPR active. Malayalam paths are frozen.")
+            print("🔒 Sarvam TTS is frozen. SARVAM_API_KEY not required.")
 
         # --- Connectivity ---
         connectivity = ConnectivityChecker(
@@ -78,14 +86,15 @@ class VoiceResponseEngine:
         online_stt = GeminiSTT(
             api_key=cfg.gemini_api_key,
             model_name=cfg.gemini_model,
-            whisper_fallback=offline_stt,  # Fallback to Whisper on 429/timeout
+            whisper_fallback=offline_stt,
         )
         if online:
             online_stt.preload()
 
         # --- TTS ---
-        # Offline: Kokoro (English only)
         print("\n📦 Loading TTS modules...")
+
+        # Offline / last-resort: Kokoro 82M (English, CPU)
         offline_tts = KokoroTTS(
             lang_code=cfg.kokoro_lang,
             voice=cfg.kokoro_voice,
@@ -96,29 +105,17 @@ class VoiceResponseEngine:
             print(f"⚠️  Kokoro TTS failed to load: {exc}")
             print("   Offline TTS will not be available.")
 
-        # Online fallback: Gemini 3.1 Flash TTS → Kokoro last-resort
-        gemini_tts = GeminiTTS(
+        # Online primary: Gemini 3.1 Flash TTS (Sarvam is frozen)
+        # FROZEN: SarvamTTS is NOT instantiated. To re-enable Malayalam TTS,
+        #         set english_only=False and uncomment the SarvamTTS block.
+        online_tts = GeminiTTS(
             api_key=cfg.gemini_api_key,
             model_name=cfg.gemini_tts_model,
             voice_name=cfg.gemini_tts_voice,
-            kokoro_fallback=offline_tts,  # Last-resort fallback to Kokoro
+            kokoro_fallback=offline_tts,
         )
         if online:
-            gemini_tts.preload()
-
-        # Online primary: Sarvam AI TTS (Malayalam-native)
-        online_tts = SarvamTTS(
-            api_key=cfg.sarvam_api_key,
-            speaker=cfg.sarvam_speaker,
-            target_language_code=cfg.sarvam_language,
-            model=cfg.sarvam_model,
-        )
-        if online and cfg.sarvam_api_key:
-            try:
-                online_tts.preload()
-            except Exception as exc:
-                print(f"⚠️  Sarvam TTS failed to init: {exc}")
-                print("   Will use Gemini TTS as primary online TTS.")
+            online_tts.preload()
 
         # --- LLM ---
         print("\n📦 Loading LLM modules...")
@@ -131,17 +128,18 @@ class VoiceResponseEngine:
 
         offline_llm = LocalLLM(
             model_path=cfg.local_llm_model_path,
-            n_gpu_layers=cfg.local_llm_gpu_layers,
+            n_gpu_layers=cfg.local_llm_gpu_layers,   # 0 on RPi5
             n_ctx=cfg.local_llm_ctx_size,
         )
-        # Don't preload offline LLM — shares VRAM with Whisper.
-        # Loaded on-demand when offline mode is detected.
         if offline_llm.is_available():
             print(f"✅ Offline LLM available: {cfg.local_llm_model_path}")
         else:
             print(f"⚠️  Offline LLM not found: {cfg.local_llm_model_path}")
 
         # --- Pipeline ---
+        # online_tts_fallback is not needed in English-only mode since
+        # GeminiTTS already cascades to Kokoro internally.
+        # Passed as None to keep the Pipeline interface stable.
         self.pipeline = Pipeline(
             vad=vad,
             online_stt=online_stt,
@@ -149,9 +147,10 @@ class VoiceResponseEngine:
             online_llm=online_llm,
             offline_llm=offline_llm,
             online_tts=online_tts,
-            online_tts_fallback=gemini_tts,
+            online_tts_fallback=None,   # Sarvam frozen; GeminiTTS handles fallback internally
             offline_tts=offline_tts,
             connectivity=connectivity,
+            english_only=cfg.english_only,
         )
 
         print("\n" + "=" * 60)

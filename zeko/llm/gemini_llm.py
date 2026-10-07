@@ -1,8 +1,12 @@
 """Online LLM using Gemini 2.5 Flash with async streaming.
 
 Primary online brain — streams response tokens via the google-genai SDK.
+English-only mode: always instructs the model to respond in English.
 On API error mid-stream, yields a short fallback phrase and logs — does
 not crash the pipeline.
+
+FROZEN: Language-routing logic (Malayalam/Manglish) is preserved as a
+comment below and can be restored when english_only=False.
 """
 
 from __future__ import annotations
@@ -66,9 +70,13 @@ class GeminiLLM(BaseLLM):
         client = self._get_client()
         from google.genai import errors as genai_errors
 
-        lang_map = {"ml": "Malayalam", "en": "English", "hi": "Hindi"}
-        target_lang = lang_map.get(language, "Malayalam")
-        system_instruction = f"{SYSTEM_PROMPT}\n\nRespond in {target_lang}."
+        # English-only: always instruct English regardless of detected language.
+        system_instruction = f"{SYSTEM_PROMPT}\n\nAlways respond in English."
+
+        # FROZEN: Language-routing logic — restore when english_only=False.
+        # lang_map = {"ml": "Malayalam", "en": "English", "hi": "Hindi"}
+        # target_lang = lang_map.get(language, "Malayalam")
+        # system_instruction = f"{SYSTEM_PROMPT}\n\nRespond in {target_lang}."
 
         contents = self._build_contents(user_text, history)
 

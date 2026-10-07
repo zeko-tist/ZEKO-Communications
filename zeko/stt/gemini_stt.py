@@ -1,8 +1,10 @@
 """Online STT using Gemini 2.5 Flash multimodal audio input.
 
-Sends raw audio bytes to Gemini with a system prompt tuned for
-Manglish transcription. On 429 rate limit or timeout, uses
-exponential backoff (2 retries), then falls back to WhisperSTT.
+English-only mode: transcription prompt focuses on standard English.
+FROZEN: Manglish prompt is preserved in comments for re-enablement.
+
+On 429 rate limit or timeout, uses exponential backoff (2 retries),
+then falls back to WhisperSTT. Never crashes the pipeline.
 """
 
 from __future__ import annotations
@@ -14,9 +16,14 @@ from .base import BaseSTT, TranscriptionResult
 
 
 _TRANSCRIPTION_PROMPT = (
-    "Transcribe this audio exactly. The speaker uses Malayalam "
-    "mixed with English (Manglish). Output in the original script."
+    "Transcribe this audio exactly in English."
 )
+
+# FROZEN: Manglish transcription prompt — re-enable when english_only=False.
+# _TRANSCRIPTION_PROMPT = (
+#     "Transcribe this audio exactly. The speaker uses Malayalam "
+#     "mixed with English (Manglish). Output in the original script."
+# )
 
 
 class GeminiSTT(BaseSTT):
@@ -79,10 +86,8 @@ class GeminiSTT(BaseSTT):
                     ],
                 )
                 text = response.text.strip() if response.text else ""
-                # Gemini STT doesn't provide language detection natively,
-                # so we default to "ml" (Malayalam) since that's the primary use.
                 return TranscriptionResult(
-                    text=text, language="ml", confidence=0.85
+                    text=text, language="en", confidence=0.90
                 )
 
             except Exception as exc:
@@ -93,15 +98,13 @@ class GeminiSTT(BaseSTT):
                     await asyncio.sleep(wait)
                     continue
 
-                # Exhausted retries or non-retryable error → fall back
                 print(f"⚠️  Gemini STT failed: {exc}")
                 if self.whisper_fallback is not None:
                     print("   Falling back to Whisper STT...")
                     return await self.whisper_fallback.transcribe(audio_path)
 
-                return TranscriptionResult(text="", language="ml", confidence=0.0)
+                return TranscriptionResult(text="", language="en", confidence=0.0)
 
-        # Should not reach here, but safety net
         if self.whisper_fallback is not None:
             return await self.whisper_fallback.transcribe(audio_path)
-        return TranscriptionResult(text="", language="ml", confidence=0.0)
+        return TranscriptionResult(text="", language="en", confidence=0.0)

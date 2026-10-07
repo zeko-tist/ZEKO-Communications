@@ -1,3 +1,7 @@
---extra-index-url https://download.pytorch.org/whl/cu121
-torch>=2.1.0
-torchaudio>=2.1.0
+# FROZEN: CUDA requirements for Lenovo Legion 5 (RTX 3060).
+# Not applicable for Raspberry Pi 5 (no discrete GPU, ARM64).
+# Preserved for reference if deploying back to the Legion laptop.
+#
+# --extra-index-url https://download.pytorch.org/whl/cu121
+# torch>=2.1.0
+# torchaudio>=2.1.0

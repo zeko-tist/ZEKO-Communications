@@ -1,23 +1,28 @@
-# Core
+# === Core ===
 python-dotenv>=1.0.1
 pydantic-settings>=2.0.0
 numpy>=1.26.4
 sounddevice>=0.4.6
 soundfile>=0.12.1
 aiohttp>=3.9.0
-indic-transliteration>=2.3.0
 
-# STT
-faster-whisper==1.1.0
+# === VAD ===
+# silero-vad native pip package (replaces torch.hub.load approach).
+# Uses ONNX runtime by default — faster and lighter than full PyTorch.
+silero-vad[onnx-cpu]>=5.1
 
-# LLM
-google-genai==2.8.0
-llama-cpp-python>=0.3.0
+# === STT ===
+faster-whisper>=1.2.1
 
-# TTS
+# === LLM ===
+google-genai>=2.28.0
+# CPU build; on RPi5 install with OpenBLAS for best ARM64 performance:
+#   CMAKE_ARGS="-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS" pip install llama-cpp-python
+llama-cpp-python>=0.3.36
+
+# === TTS ===
 kokoro>=0.9.0
-sarvamai>=1.0.0
 
-# VAD
-torch>=2.1.0
-torchaudio>=2.1.0
+# === FROZEN: Dependencies only needed when ENGLISH_ONLY=False ===
+# indic-transliteration>=2.3.0   # Malayalam transliteration
+# sarvamai>=0.1.0                # Sarvam AI TTS (Malayalam)

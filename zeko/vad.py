@@ -13,7 +13,6 @@ from pathlib import Path
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
-import torch
 
 
 @dataclass
@@ -58,14 +57,14 @@ class VADRecorder:
         self._model, self._utils = self._load_vad()
 
     def _load_vad(self):
-        """Load silero-vad model via torch.hub."""
-        model, utils = torch.hub.load(
-            repo_or_dir="snakers4/silero-vad",
-            model="silero_vad",
-            force_reload=False,
-            trust_repo=True,
-        )
-        return model, utils
+        """Load silero-vad model via native pip package (ONNX)."""
+        try:
+            from silero_vad import load_silero_vad
+        except ImportError:
+            raise RuntimeError("silero-vad not installed. Run: pip install silero-vad[onnx-cpu]")
+        
+        model = load_silero_vad(onnx=True)
+        return model, None
 
     def record(self) -> VADResult:
         """Block until speech is detected, record, then return on silence.
@@ -95,9 +94,9 @@ class VADRecorder:
                 audio_chunk = audio_chunk.flatten()
                 total_chunks += 1
 
-                # Compute speech probability
-                tensor = torch.from_numpy(audio_chunk)
-                speech_prob = self._model(tensor, self.sample_rate).item()
+                # Compute speech probability (ONNX expects 1D float32 numpy array)
+                # Model returns a numpy scalar or array; float() extracts the value
+                speech_prob = float(self._model(audio_chunk, self.sample_rate))
 
                 if not is_speaking:
                     if speech_prob > self.threshold:

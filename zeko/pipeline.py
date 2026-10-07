@@ -1,18 +1,15 @@
 """Async streaming pipeline orchestrator.
 
-The heart of the ZEKO VRE engine — replaces alpha's sequential
-listen → think → speak with an async pipeline that overlaps
-LLM generation and TTS synthesis via asyncio.Queue + asyncio.gather.
+The heart of the ZEKO VRE engine — overlaps LLM generation and TTS synthesis
+via asyncio.Queue + asyncio.gather, cutting perceived latency 60–70%.
+
+Runtime mode (English-only):
+    - Malayalam transliteration path is FROZEN (preserved in code, not called).
+    - TTS online primary: GeminiTTS (with internal Kokoro fallback).
+    - All LLM responses are requested in English.
 
 Architecture:
     VAD → STT → [async LLM stream → sentence buffer → Queue] ← → [TTS consumer → Speaker]
-
-The key insight: asyncio.gather runs stream_and_split() and
-synthesize_and_play() concurrently. TTS synthesizes sentence 1
-while the LLM generates sentence 2. Cuts perceived latency 60–70%.
-
-TTS priority chain (online mode):
-    Sarvam AI (primary, Malayalam-native) → Gemini 3.1 Flash (fallback) → Kokoro (last resort)
 """
 
 from __future__ import annotations
@@ -29,6 +26,8 @@ from .stt.base import BaseSTT, TranscriptionResult
 from .llm.base import BaseLLM
 from .tts.base import BaseTTS
 from .vad import VADRecorder, VADResult
+
+# FROZEN: transliterate_for_tts is imported but only called when english_only=False.
 from .utils.transliterate import transliterate_for_tts
 
 
@@ -75,19 +74,21 @@ class Pipeline:
         online_llm: BaseLLM,
         offline_llm: BaseLLM | None,
         online_tts: BaseTTS,
-        online_tts_fallback: BaseTTS,
+        online_tts_fallback: BaseTTS | None,  # Frozen (Sarvam); kept for interface stability
         offline_tts: BaseTTS,
         connectivity: ConnectivityChecker,
+        english_only: bool = True,
     ) -> None:
         self.vad = vad
         self.online_stt = online_stt
         self.offline_stt = offline_stt
         self.online_llm = online_llm
         self.offline_llm = offline_llm
-        self.online_tts = online_tts                  # Sarvam AI (primary)
-        self.online_tts_fallback = online_tts_fallback  # Gemini TTS (fallback)
-        self.offline_tts = offline_tts                  # Kokoro (offline)
+        self.online_tts = online_tts                    # GeminiTTS (online primary)
+        self.online_tts_fallback = online_tts_fallback  # FROZEN: was SarvamTTS; now None
+        self.offline_tts = offline_tts                  # KokoroTTS (offline / last-resort)
         self.connectivity = connectivity
+        self.english_only = english_only
         self.history: list[dict] = []
 
     async def _select_mode(self) -> str:
@@ -107,7 +108,7 @@ class Pipeline:
         """Transcribe captured audio using the appropriate STT engine."""
         wav_path = vad_result.save_wav()
         if wav_path is None:
-            return TranscriptionResult(text="", language="ml", confidence=0.0)
+            return TranscriptionResult(text="", language="en", confidence=0.0)
 
         try:
             stt = self.online_stt if mode == "online" else self.offline_stt
@@ -117,7 +118,6 @@ class Pipeline:
             print(f'📝 STT ({mode}): "{result.text}" [{result.language}] ({elapsed:.2f}s)')
             return result
         finally:
-            # Clean up temp WAV
             try:
                 wav_path.unlink()
             except OSError:
@@ -128,43 +128,37 @@ class Pipeline:
     ) -> tuple[np.ndarray, int]:
         """Synthesize speech with the TTS fallback chain.
 
-        Online mode:
-            1. Sarvam AI (primary — handles Malayalam natively, no transliteration)
-            2. Gemini 3.1 Flash (fallback — pass raw text, model handles Malayalam)
-            3. Kokoro (last resort via Gemini's internal fallback — needs transliteration)
+        English-only mode:
+            Online:  GeminiTTS (primary; internally falls back to Kokoro on failure)
+            Offline: KokoroTTS (English, no transliteration needed)
 
-        Offline mode:
-            1. Kokoro (English only — transliterate Malayalam to Latin)
+        FROZEN — Malayalam offline path:
+            When english_only=False, transliterate_for_tts(text) would be called
+            before passing to KokoroTTS. That path is preserved but not executed.
         """
         if mode == "offline":
-            # Offline: Kokoro only, needs transliterated text
-            tts_text = transliterate_for_tts(text)
-            return await self.offline_tts.synthesize(tts_text)
+            if not self.english_only:
+                # FROZEN: Malayalam offline path. Uncomment to re-enable.
+                # tts_text = transliterate_for_tts(text)
+                # return await self.offline_tts.synthesize(tts_text)
+                pass
+            # English-only: pass text directly to Kokoro, no transliteration.
+            return await self.offline_tts.synthesize(text)
 
-        # Online: try Sarvam first (no transliteration needed)
-        try:
-            return await self.online_tts.synthesize(text)
-        except Exception as exc:
-            print(f"⚠️  Sarvam TTS failed: {exc}")
-            print("   Falling back to Gemini TTS...")
-
-        # Gemini fallback (also handles Malayalam natively in 3.1)
-        # Gemini's internal fallback to Kokoro will transliterate if needed
-        return await self.online_tts_fallback.synthesize(text)
+        # Online: GeminiTTS handles its own Kokoro fallback internally.
+        return await self.online_tts.synthesize(text)
 
     async def generate_and_speak(
         self, transcript: TranscriptionResult, mode: str
     ) -> str:
         """Stream LLM response, split into sentences, TTS each one concurrently.
 
-        This is the core streaming architecture from the spec:
         1. stream_and_split() — LLM streams tokens into a buffer,
            extracts complete sentences, pushes to asyncio.Queue
         2. synthesize_and_play() — consumes sentences from the queue,
            synthesizes and plays audio
 
         Both run concurrently via asyncio.gather.
-
         Returns the full response text.
         """
         llm = self.online_llm if mode == "online" else self.offline_llm
@@ -177,7 +171,7 @@ class Pipeline:
         full_response_parts: list[str] = []
 
         t0 = time.perf_counter()
-        first_sentence_time: list[float | None] = [None]  # mutable container
+        first_sentence_time: list[float | None] = [None]
 
         async def stream_and_split():
             """LLM stream → sentence buffer → queue."""
@@ -188,7 +182,6 @@ class Pipeline:
                 full_response_parts.append(chunk)
                 buffer += chunk
 
-                # Extract complete sentences from the buffer
                 while True:
                     sentence, buffer = _extract_complete_sentence(buffer)
                     if sentence is None:
@@ -204,8 +197,7 @@ class Pipeline:
                     first_sentence_time[0] = time.perf_counter() - t0
                 await sentence_queue.put(buffer.strip())
 
-            # Signal end-of-stream
-            await sentence_queue.put(None)
+            await sentence_queue.put(None)  # End-of-stream sentinel
 
         async def synthesize_and_play():
             """Consume sentences from queue, synthesize and play audio."""
